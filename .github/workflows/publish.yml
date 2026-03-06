@@ -1,0 +1,104 @@
+name: Publish Maven to SDKman
+
+on:
+  workflow_dispatch:
+    inputs:
+      maven_version:
+        description: "Maven version to publish (e.g., 4.0.0)"
+        required: true
+        type: string
+      make_default:
+        description: "Set as SDKman default version"
+        required: false
+        type: boolean
+        default: true
+  push:
+    branches:
+      - main
+    paths:
+      - "versions/maven.json"
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Determine version
+        id: config
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.maven_version }}"
+            MAKE_DEFAULT="${{ inputs.make_default }}"
+          else
+            VERSION=$(jq -r '.version' versions/maven.json)
+            MAKE_DEFAULT=$(jq -r '.make_default' versions/maven.json)
+          fi
+          if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
+            echo "::warning::No version specified in versions/maven.json — skipping publish"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          VERSION="${VERSION//$'\n'/}"
+          VERSION="${VERSION//$'\r'/}"
+          MAKE_DEFAULT="${MAKE_DEFAULT//$'\n'/}"
+          MAKE_DEFAULT="${MAKE_DEFAULT//$'\r'/}"
+          {
+            echo "skip=false"
+            echo "maven_version=${VERSION}"
+            echo "make_default=${MAKE_DEFAULT}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Version: ${VERSION}, make_default: ${MAKE_DEFAULT}"
+
+      - name: Validate version format
+        if: steps.config.outputs.skip != 'true'
+        run: |
+          VERSION="${{ steps.config.outputs.maven_version }}"
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-.+)?$'; then
+            echo "::error::Invalid version format '${VERSION}' — expected e.g., 4.0.0 or 4.0.0-rc-6"
+            exit 1
+          fi
+
+      - name: Derive download URL
+        if: steps.config.outputs.skip != 'true'
+        id: url
+        run: |
+          VERSION="${{ steps.config.outputs.maven_version }}"
+          URL="https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/${VERSION}/apache-maven-${VERSION}-bin.zip"
+          echo "download_url=${URL}" >> "$GITHUB_OUTPUT"
+          echo "Download URL: ${URL}"
+
+      - name: Verify download URL exists
+        if: steps.config.outputs.skip != 'true'
+        run: |
+          URL="${{ steps.url.outputs.download_url }}"
+          VERSION="${{ steps.config.outputs.maven_version }}"
+          if ! curl --head --fail --silent --show-error "$URL"; then
+            echo "::error::Maven version ${VERSION} not found — download URL does not exist: ${URL}"
+            echo "Please verify that version ${VERSION} has been released at https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/${VERSION}/"
+            exit 1
+          fi
+
+      - name: Release to SDKman
+        if: steps.config.outputs.skip != 'true'
+        uses: sdkman/sdkman-release-action@0c5e8067fd8e3577e29e279eb91f9044c438b0c9 # main
+        with:
+          SDKMAN_CONSUMER_KEY: ${{ secrets.SDKMAN_CONSUMER_KEY }}
+          SDKMAN_CONSUMER_TOKEN: ${{ secrets.SDKMAN_CONSUMER_TOKEN }}
+          SDKMAN_CANDIDATE: maven
+          SDKMAN_CANDIDATE_VERSION: ${{ steps.config.outputs.maven_version }}
+          SDKMAN_CANDIDATE_URL: ${{ steps.url.outputs.download_url }}
+          SDKMAN_CANDIDATE_PLATFORM: UNIVERSAL
+
+      - name: Set as SDKman default
+        if: ${{ steps.config.outputs.skip != 'true' && steps.config.outputs.make_default == 'true' }}
+        uses: sdkman/sdkman-default-action@38ca710dbacfada85ccfb609953e4c92a717e557 # main
+        with:
+          SDKMAN_CONSUMER_KEY: ${{ secrets.SDKMAN_CONSUMER_KEY }}
+          SDKMAN_CONSUMER_TOKEN: ${{ secrets.SDKMAN_CONSUMER_TOKEN }}
+          SDKMAN_CANDIDATE: maven
+          SDKMAN_CANDIDATE_VERSION: ${{ steps.config.outputs.maven_version }}

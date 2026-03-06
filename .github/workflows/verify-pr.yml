@@ -1,0 +1,54 @@
+name: Verify Maven Version (PR)
+
+on:
+  pull_request:
+    paths:
+      - "versions/maven.json"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Read version file
+        id: config
+        run: |
+          VERSION=$(jq -r '.version' versions/maven.json)
+          MAKE_DEFAULT=$(jq -r '.make_default' versions/maven.json)
+          if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
+            echo "::error::No version specified in versions/maven.json"
+            exit 1
+          fi
+          VERSION="${VERSION//$'\n'/}"
+          VERSION="${VERSION//$'\r'/}"
+          MAKE_DEFAULT="${MAKE_DEFAULT//$'\n'/}"
+          MAKE_DEFAULT="${MAKE_DEFAULT//$'\r'/}"
+          {
+            echo "maven_version=${VERSION}"
+            echo "make_default=${MAKE_DEFAULT}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Version: ${VERSION}, make_default: ${MAKE_DEFAULT}"
+
+      - name: Validate version format
+        run: |
+          VERSION="${{ steps.config.outputs.maven_version }}"
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-.+)?$'; then
+            echo "::error::Invalid version format '${VERSION}' — expected e.g., 4.0.0 or 4.0.0-rc-6"
+            exit 1
+          fi
+
+      - name: Verify download URL exists
+        run: |
+          VERSION="${{ steps.config.outputs.maven_version }}"
+          URL="https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/${VERSION}/apache-maven-${VERSION}-bin.zip"
+          echo "Checking: ${URL}"
+          if ! curl --head --fail --silent --show-error "$URL"; then
+            echo "::error::Maven version ${VERSION} not found — download URL does not exist: ${URL}"
+            echo "Please verify that version ${VERSION} has been released at https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/${VERSION}/"
+            exit 1
+          fi
