@@ -11,12 +11,12 @@ See [Discussion #156](https://github.com/support-and-care/maven-support-and-care
 
 ## How It Works
 
-The publish workflow derives a download URL from the version number, verifies the archive exists on `dlcdn.apache.org`, then calls the SDKman vendor API to register the release. It can optionally set the version as the SDKman default.
+The `publish` workflow derives a download URL from the version number, verifies the archive exists on `repo.maven.apache.org`, then calls the SDKman vendor API to register the release. It can optionally set the version as the SDKman default.
 
-There are two ways to trigger a publish:
+There are two ways to trigger a publication:
 
 - **Workflow dispatch** — maintainers trigger it manually via the GitHub Actions UI with a version input
-- **PR-based** — contributors update `versions/maven.json` in a PR; a verification workflow validates the version on the PR, and merging to `main` triggers the publish
+- **PR-based** — contributors update `versions/maven.json` in a PR; a verification workflow validates the version on the PR, and merging to `main` triggers the publication
 
 Both paths use the official [sdkman-release-action](https://github.com/sdkman/sdkman-release-action) and [sdkman-default-action](https://github.com/sdkman/sdkman-default-action).
 
@@ -48,14 +48,14 @@ The following repository secrets must be configured:
    }
    ```
 3. Open a pull request — CI automatically verifies the version format and download URL
-4. A maintainer reviews and merges — the publish workflow triggers automatically
+4. A maintainer reviews and merges — the `publish` workflow triggers automatically
 
 ### Download URL Construction
 
 The download URL is derived automatically from the version:
 
 ```
-https://dlcdn.apache.org/maven/maven-{major}/{version}/binaries/apache-maven-{version}-bin.tar.gz
+https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/{version}/apache-maven-{version}-bin.zip
 ```
 
 The workflow verifies the URL exists before publishing to SDKman.
